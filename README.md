@@ -1,139 +1,148 @@
-# plutosdr-fw
-PlutoSDR Firmware for the [ADALM-PLUTO](https://wiki.analog.com/university/tools/pluto "PlutoSDR Wiki Page") Active Learning Module
+# plutosdr-fw (LibreSDR fork)
 
-Latest binary Release : [![GitHub Release](https://img.shields.io/github/release/analogdevicesinc/plutosdr-fw.svg)](https://github.com/analogdevicesinc/plutosdr-fw/releases/latest)  [![Github Releases](https://img.shields.io/github/downloads/analogdevicesinc/plutosdr-fw/total.svg)](https://github.com/analogdevicesinc/plutosdr-fw/releases/latest)
+This is a personal fork of ADI's [plutosdr-fw](https://github.com/analogdevicesinc/plutosdr-fw), with the [LibreSDR (ZynqSDR)](https://github.com/day0wl/libresdr-fw) board-support patch from [day0wl](https://github.com/day0wl) already applied and committed (branch `libre_v0.37`, based on the upstream v0.37 release). Unlike day0wl's original repo, there is no `apply.sh` step here — clone this fork recursively and it already builds the `libre` target.
 
-Firmware License : [![Many Licenses](https://img.shields.io/badge/license-LGPL2+-blue.svg)](https://github.com/analogdevicesinc/plutosdr-fw/blob/master/LICENSE.md)  [![Many License](https://img.shields.io/badge/license-GPL2+-blue.svg)](https://github.com/analogdevicesinc/plutosdr-fw/blob/master/LICENSE.md)  [![Many License](https://img.shields.io/badge/license-BSD-blue.svg)](https://github.com/analogdevicesinc/plutosdr-fw/blob/master/LICENSE.md)  [![Many License](https://img.shields.io/badge/license-apache-blue.svg)](https://github.com/analogdevicesinc/plutosdr-fw/blob/master/LICENSE.md) and many others.
+Confirmed working: built with Vivado/Vitis **2021.2** and tested on real LibreSDR hardware.
 
-[Instructions from the Wiki: Building the image](https://wiki.analog.com/university/tools/pluto/building_the_image)
+Original PlutoSDR wiki instructions (for reference, upstream/Pluto only): [Building the image](https://wiki.analog.com/university/tools/pluto/building_the_image)
 
-* Build Instructions
+## Build Instructions
+
 ```bash
- sudo apt-get install git build-essential fakeroot libncurses5-dev libssl-dev ccache
- sudo apt-get install dfu-util u-boot-tools device-tree-compiler libssl1.0-dev mtools
- sudo apt-get install bc python cpio zip unzip rsync file wget
- git clone --recursive https://github.com/analogdevicesinc/plutosdr-fw.git
- cd plutosdr-fw
- export CROSS_COMPILE=arm-linux-gnueabihf-
- export PATH=$PATH:/opt/Xilinx/Vitis/2021.2/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin
- export VIVADO_SETTINGS=/opt/Xilinx/Vivado/2021.2/settings64.sh
- make
+sudo apt-get install git build-essential fakeroot libncurses5-dev libssl-dev ccache
+sudo apt-get install dfu-util u-boot-tools device-tree-compiler libssl1.0-dev mtools
+sudo apt-get install bc python cpio zip unzip rsync file wget
 
+git clone --recursive https://github.com/kushpet/ad_plutosdr-fw.git -b libre_v0.37
+cd ad_plutosdr-fw
+
+export CROSS_COMPILE=arm-linux-gnueabihf-
+export PATH=$PATH:/opt/Xilinx/Vitis/2021.2/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin
+export VIVADO_SETTINGS=/opt/Xilinx/Vivado/2021.2/settings64.sh
+
+make
+make sdimg
 ```
 
-The project may build also using Vivado 2019.1 2018.2 2017.4, 2017.2, 2016.4 or 2016.2.
-However 2021.2 is the current tested FPGA systhesis toolchain.
-In the v0.30 release we swithched to the arm-linux-gnueabihf-gcc hard-float toolchain.
+`TARGET` already defaults to `libre` in this fork's `Makefile`, so there is no need to set it manually. As with the upstream day0wl patch, **only Vivado/Vitis 2021.2 is supported** — newer Vivado versions are known not to work because of HDL design dependencies, so don't try to "upgrade" the toolchain here.
 
-If you want to use the former arm-xilinx-linux-gnueabi-gcc soft-float toolchain included in SDK 2017.2.
-Following variables should be exported:
+If you need to update submodules to their pinned commits later:
+```bash
+git pull
+git submodule update --init --recursive
+```
 
+## First boot / deployment (SD card)
 
- ```bash
- export CROSS_COMPILE=arm-xilinx-linux-gnueabi-
- export PATH=$PATH:/opt/Xilinx/SDK/2017.2/gnu/arm/lin/bin
- export VIVADO_SETTINGS=/opt/Xilinx/Vivado/2017.4/settings64.sh
- ```
+LibreSDR boards typically ship with empty flash, so the first boot has to happen from an SD card:
 
-And you need to revert this patch:
-https://github.com/analogdevicesinc/buildroot/commit/fea212afc7dc0ee530762a1921d9ae8180778ffa
+1. Format a small SD card as **FAT32**.
+2. Copy everything from `build_sdimg/` (produced by `make sdimg`) onto the card: `BOOT.bin`, `uImage`, `devicetree.dtb`, `uEnv.txt`, `uramdisk.image.gz`.
+3. Insert the card and power on the board.
+4. Once it's running from the SD card, it can flash itself the same way a stock PlutoSDR does over USB mass storage/DFU, and will eventually boot from onboard flash without the SD card.
 
+**Connectivity on first boot:**
+- Gigabit Ethernet, default IP `192.168.1.10`
+- Serial debug console: `/dev/ttyUSB2`, 115200 8N1
 
- If you receive an error similar to the following:
- ```
- Starting SDK. This could take few seconds... timeout while establishing a connection with SDK
-    while executing
+## Troubleshooting
+
+If you receive an error similar to the following:
+```
+Starting SDK. This could take few seconds... timeout while establishing a connection with SDK
+   while executing
 "error "timeout while establishing a connection with SDK""
-    (procedure "getsdkchan" line 108)
-    invoked from within
+   (procedure "getsdkchan" line 108)
+   invoked from within
 "getsdkchan"
-    (procedure "createhw" line 26)
-    invoked from within
+   (procedure "createhw" line 26)
+   invoked from within
 "createhw {*}$args"
-    (procedure "::sdk::create_hw_project" line 3)
-    invoked from within
+   (procedure "::sdk::create_hw_project" line 3)
+   invoked from within
 "sdk create_hw_project -name hw_0 -hwspec build/system_top.hdf"
-    (file "scripts/create_fsbl_project.tcl" line 5)
+   (file "scripts/create_fsbl_project.tcl" line 5)
 ```
-you may be able to work around it by preventing eclipse from using GTK3 for the Standard Widget Toolkit (SWT). Prior to running make, also set the following environment variable: 
+you may be able to work around it by preventing eclipse from using GTK3 for the Standard Widget Toolkit (SWT). Prior to running `make`, also set:
 ```bash
 export SWT_GTK3=0
 ```
 This problem seems to affect Ubuntu 16.04LTS only.
 
- * Updating your local repository 
- ```bash 
-      git pull
-      git submodule update --init --recursive
-  ```
-   
-* Build Artifacts
- ```bash
-      michael@HAL9000:~/devel/plutosdr-fw$ ls -AGhl build
-      total 543M
-      -rw-rw-r-- 1 michael   69 Mär  1 09:28 boot.bif
-      -rw-rw-r-- 1 michael 443K Mär  1 09:28 boot.bin
-      -rw-rw-r-- 1 michael 443K Mär  1 09:28 boot.dfu
-      -rw-rw-r-- 1 michael 572K Mär  1 09:28 boot.frm
-      -rw-rw-r-- 1 michael 475M Mär  1 09:28 legal-info-v0.36.tar.gz
-      -rw-rw-r-- 1 michael 617K Mär  1 09:25 LICENSE.html
-      -rw-rw-r-- 1 michael  11M Mär  1 09:27 pluto.dfu
-      -rw-rw-r-- 1 michael  11M Mär  1 09:28 pluto.frm
-      -rw-rw-r-- 1 michael   33 Mär  1 09:28 pluto.frm.md5
-      -rw-rw-r-- 1 michael  11M Mär  1 09:27 pluto.itb
-      -rw-rw-r-- 1 michael  20M Mär  1 09:28 plutosdr-fw-v0.36.zip
-      -rw-rw-r-- 1 michael 578K Mär  1 09:28 plutosdr-jtag-bootstrap-v0.36.zip
-      -rw-rw-r-- 1 michael 441K Mär  1 09:26 ps7_init.c
-      -rw-rw-r-- 1 michael 442K Mär  1 09:26 ps7_init_gpl.c
-      -rw-rw-r-- 1 michael 4,2K Mär  1 09:26 ps7_init_gpl.h
-      -rw-rw-r-- 1 michael 3,6K Mär  1 09:26 ps7_init.h
-      -rw-rw-r-- 1 michael 2,4M Mär  1 09:26 ps7_init.html
-      -rw-rw-r-- 1 michael  31K Mär  1 09:26 ps7_init.tcl
-      -rw-r--r-- 1 michael 5,3M Mär  1 09:25 rootfs.cpio.gz
-      drwxrwxr-x 6 michael 4,0K Mär  1 09:26 sdk
-      -rw-rw-r-- 1 michael 943K Mär  1 09:26 system_top.bit
-      -rw-rw-r-- 1 michael 716K Mär  1 09:26 system_top.xsa
-      -rwxrwxr-x 1 michael 761K Mär  1 09:28 u-boot.elf
-      -rw-rw---- 1 michael 128K Mär  1 09:28 uboot-env.bin
-      -rw-rw---- 1 michael 129K Mär  1 09:28 uboot-env.dfu
-      -rw-rw-r-- 1 michael 7,0K Mär  1 09:28 uboot-env.txt
-      -rwxrwxr-x 1 michael 4,1M Mär  1 09:24 zImage
-      -rw-rw-r-- 1 michael  22K Mär  1 09:26 zynq-pluto-sdr.dtb
-      -rw-rw-r-- 1 michael  22K Mär  1 09:26 zynq-pluto-sdr-revb.dtb
-      -rw-rw-r-- 1 michael  23K Mär  1 09:26 zynq-pluto-sdr-revc.dtb
+## Build Artifacts
 
- ```
- 
- * Main targets
- 
-     | File  | Comment |
-     | ------------- | ------------- | 
-     | pluto.frm | Main PlutoSDR firmware file used with the USB Mass Storage Device |
-     | pluto.dfu | Main PlutoSDR firmware file used in DFU mode |
-     | boot.frm  | First and Second Stage Bootloader (u-boot + fsbl + uEnv) used with the USB Mass Storage Device |
-     | boot.dfu  | First and Second Stage Bootloader (u-boot + fsbl) used in DFU mode |
-     | uboot-env.dfu  | u-boot default environment used in DFU mode |
-     | plutosdr-fw-vX.XX.zip  | ZIP archive containg all of the files above |  
-     | plutosdr-jtag-bootstrap-vX.XX.zip  | ZIP archive containg u-boot and Vivao TCL used for JATG bootstrapping |       
- 
-  * Other intermediate targets
+```
+build/
+├── boot.bif
+├── boot.bin
+├── boot.dfu
+├── boot.frm
+├── libre.dfu
+├── libre.frm
+├── libre.itb
+├── libresdr-fw-vX.XX.zip
+├── rootfs.cpio.gz
+├── sdk/
+├── system_top.bit
+├── system_top.xsa
+├── u-boot.elf
+├── uboot-env.bin
+├── uboot-env.txt
+├── zImage
+└── zynq-libre.dtb
 
-     | File  | Comment |
-     | ------------- | ------------- |
-     | boot.bif | Boot Image Format file used to generate the Boot Image |
-     | boot.bin | Final Boot Image |
-     | pluto.frm.md5 | md5sum of the pluto.frm file |
-     | pluto.itb | u-boot Flattened Image Tree |
-     | rootfs.cpio.gz | The Root Filesystem archive |
-     | sdk | Vivado/XSDK Build folder including  the FSBL |
-     | system_top.bit | FPGA Bitstream (from HDF) |
-     | system_top.hdf | FPGA Hardware Description  File exported by Vivado |
-     | u-boot.elf | u-boot ELF Binary |
-     | uboot-env.bin | u-boot default environment in binary format created form uboot-env.txt |
-     | uboot-env.txt | u-boot default environment in human readable text format |
-     | zImage | Compressed Linux Kernel Image |
-     | zynq-pluto-sdr.dtb | Device Tree Blob for Rev.A |
-     | zynq-pluto-sdr-revb.dtb | Device Tree Blob for Rev.B|     
-     | zynq-pluto-sdr-revc.dtb | Device Tree Blob for Rev.C|
- 
+build_sdimg/            # produced by `make sdimg`, ready to copy to an SD card
+├── BOOT.bin
+├── boot.bif
+├── devicetree.dtb
+├── fsbl.elf
+├── system_top.bit
+├── u-boot.elf
+├── uEnv.txt
+├── uImage
+├── uramdisk.image.gz
+└── ramdisk.image.gz
+```
 
+### Main targets
+
+| File | Comment |
+| ------------- | ------------- |
+| libre.frm | Main LibreSDR firmware file used with the USB Mass Storage Device |
+| libre.dfu | Main LibreSDR firmware file used in DFU mode |
+| boot.frm  | First and Second Stage Bootloader (u-boot + fsbl + uEnv) used with the USB Mass Storage Device |
+| boot.dfu  | First and Second Stage Bootloader (u-boot + fsbl) used in DFU mode |
+| uboot-env.dfu  | u-boot default environment used in DFU mode |
+| libresdr-fw-vX.XX.zip  | ZIP archive containing all of the files above |
+
+### `make sdimg` targets (SD card boot)
+
+| File | Comment |
+| ------------- | ------------- |
+| BOOT.bin | FSBL + bitstream + u-boot boot image for the SD card |
+| uImage | u-boot-wrapped Linux kernel image |
+| devicetree.dtb | Device Tree Blob for LibreSDR (`zynq-libre.dtb`) |
+| uEnv.txt | u-boot environment used to boot from the SD card |
+| uramdisk.image.gz | u-boot-wrapped root filesystem ramdisk |
+
+### Other intermediate targets
+
+| File | Comment |
+| ------------- | ------------- |
+| boot.bif | Boot Image Format file used to generate the Boot Image |
+| boot.bin | Final Boot Image |
+| libre.itb | u-boot Flattened Image Tree |
+| rootfs.cpio.gz | The Root Filesystem archive |
+| sdk | Vivado/XSDK Build folder including the FSBL |
+| system_top.bit | FPGA Bitstream (from HDF/XSA) |
+| system_top.xsa | FPGA Hardware Description File exported by Vivado |
+| u-boot.elf | u-boot ELF Binary |
+| uboot-env.bin | u-boot default environment in binary format created from uboot-env.txt |
+| uboot-env.txt | u-boot default environment in human readable text format |
+| zImage | Compressed Linux Kernel Image |
+| zynq-libre.dtb | Device Tree Blob for LibreSDR |
+
+## Credits
+
+- [analogdevicesinc/plutosdr-fw](https://github.com/analogdevicesinc/plutosdr-fw) — original PlutoSDR firmware
+- [day0wl/libresdr-fw](https://github.com/day0wl/libresdr-fw) — LibreSDR (ZynqSDR) board-support patch this branch is based on
