@@ -47,10 +47,15 @@ make sdimg      # build_sdimg/: BOOT.bin, uImage, devicetree.dtb, uEnv.txt, uram
 - After checking out another superproject revision, always run `git submodule update`.
 - `~/petalinux-cache` holds Yocto/PetaLinux downloads and sstate. It is **not** used by this build, which uses Vivado + buildroot, not PetaLinux.
 - `make overclock OVERCLOCK_CPU_MULT=n OVERCLOCK_DDR_MULT=n` is opt-in and out of spec. Do not enable overclocking by default.
+- GCC plugins are explicitly disabled in `zynq_libre_defconfig`. With the Linaro toolchain they would otherwise be auto-enabled, and the build would then need host `libmpc-dev`.
+- The `bootgen` warning "fsbl.elf.0 range is overlapped with partition system_top.bit.0" is expected and harmless.
+- Reference build (2026-10-07, 8 cores): tag `libre-v0.38` and the LVDS tip both built cleanly with Vivado 2022.2 and met timing.
 
 ## Hardware (see `docs/zynqsdr_rev5.pdf`; original Pluto: `docs/plutosdr_schematic_revd_0.1.pdf`)
 
 - SoC **XC7Z020-1CLG400I** (speed grade −1: CPU max 667 MHz). 50 MHz PS_CLK.
+  - The HDL project (inherited from day0wl) targets `xc7z020clg400-2`, so timing is analysed for −2, which is optimistic for this board.
+  - With a 50 MHz PS_CLK, the requested 666.67 MHz becomes an actual **675 MHz** APU clock. This was the same in libre-v0.37, which runs stably.
 - RF: **AD9363**, 40 MHz reference (CLK-40M from a VCTCXO tuned by a DAC5311). Two RX and two TX on SMA. MMCX inputs for PPS and a 10 MHz external reference.
 - RAM: 2× **MT41K256M16TW** (DDR3L 1.35 V, 32-bit bus, 1 GiB). HDL uses the MT41J256M16 RE-125 preset at 525 MHz.
 - QSPI: **W25Q256JV** (Winbond, 32 MiB). DT compatible `winbond,w25q256`. Partitions: fsbl+uboot 1M, uboot-env 128k, nvmfs, linux 30M.
