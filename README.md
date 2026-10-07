@@ -1,30 +1,44 @@
 # plutosdr-fw (LibreSDR fork)
 
-This is a personal fork of ADI's [plutosdr-fw](https://github.com/analogdevicesinc/plutosdr-fw), with the [LibreSDR (ZynqSDR)](https://github.com/day0wl/libresdr-fw) board-support patch from [day0wl](https://github.com/day0wl) already applied and committed (branch `libre_v0.37`, based on the upstream v0.37 release). Unlike day0wl's original repo, there is no `apply.sh` step here — clone this fork recursively and it already builds the `libre` target.
+Personal fork of ADI's [plutosdr-fw](https://github.com/analogdevicesinc/plutosdr-fw) with LibreSDR (ZynqSDR) board support. Clone it recursively and it builds the `libre` target directly; there is no `apply.sh` step.
 
-Confirmed working: built with Vivado/Vitis **2021.2** and tested on real LibreSDR hardware.
+Original PlutoSDR wiki instructions (upstream/Pluto only, for reference): [Building the image](https://wiki.analog.com/university/tools/pluto/building_the_image)
 
-Original PlutoSDR wiki instructions (for reference, upstream/Pluto only): [Building the image](https://wiki.analog.com/university/tools/pluto/building_the_image)
+## Branches and tags
+
+The main branch is `libresdr`. The same branch name is used in all four submodule forks (`kushpet/ad_hdl`, `ad_linux`, `ad_buildroot`, `ad_u-boot-xlnx`).
+
+| Ref | Base | Toolchain | Notes |
+| --- | --- | --- | --- |
+| tag `libre-v0.37` | ADI v0.37 + [day0wl](https://github.com/day0wl/libresdr-fw) patch + local fixes | Vivado/Vitis **2021.2** | Tested on hardware. AD9363 in CMOS mode. |
+| tag `libre-v0.38` | ADI v0.38 + the same LibreSDR support | Vivado **2022.2** | Functionally the same as `libre-v0.37` (CMOS mode, no overclock). |
+| `libresdr` (tip) | `libre-v0.38` + switch to LVDS | Vivado **2022.2** | AD9363 data interface in LVDS mode (the board is routed for it). |
+
+In each repository, the `libre-v0.38` commit is a merge: the first parent is `libre-v0.37` and the second is the ADI v0.38 commit. The ADI history therefore stays reachable through the branch.
+
+The v0.38 port was cross-checked against [hz12opensource/libresdr](https://github.com/hz12opensource/libresdr). Its CPU overclock (750 MHz on an XC7Z020-1), out-of-spec DDR timings, `-O3`/Spectre kernel hacks and iiod realtime tweaks were deliberately left out. The old branches `libre_v0.37` and `libre_v0.38` are kept unchanged for reference.
 
 ## Build Instructions
 
 ```bash
 sudo apt-get install git build-essential fakeroot libncurses5-dev libssl-dev ccache
-sudo apt-get install dfu-util u-boot-tools device-tree-compiler libssl1.0-dev mtools
-sudo apt-get install bc python cpio zip unzip rsync file wget
+sudo apt-get install dfu-util u-boot-tools device-tree-compiler mtools
+sudo apt-get install bc python3 cpio zip unzip rsync file wget
 
-git clone --recursive https://github.com/kushpet/ad_plutosdr-fw.git -b libre_v0.37
+git clone --recursive https://github.com/kushpet/ad_plutosdr-fw.git -b libresdr
 cd ad_plutosdr-fw
 
-export CROSS_COMPILE=arm-linux-gnueabihf-
-export PATH=$PATH:/opt/Xilinx/Vitis/2021.2/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin
-export VIVADO_SETTINGS=/opt/Xilinx/Vivado/2021.2/settings64.sh
+export VIVADO_SETTINGS=/opt/Xilinx/Vivado/2022.2/settings64.sh
 
 make
 make sdimg
 ```
 
-`TARGET` already defaults to `libre` in this fork's `Makefile`, so there is no need to set it manually. As with the upstream day0wl patch, **only Vivado/Vitis 2021.2 is supported** — newer Vivado versions are known not to work because of HDL design dependencies, so don't try to "upgrade" the toolchain here.
+`TARGET` already defaults to `libre`. Since v0.38, the cross compiler (Linaro GCC 7.3 `arm-linux-gnueabihf`) is installed by buildroot under `buildroot/output/host`, so there is no need to set `CROSS_COMPILE` or `PATH`. `make` aborts if the Vivado found through `VIVADO_SETTINGS` is not 2022.2.
+
+To build `libre-v0.37`, check out that tag (`git checkout libre-v0.37 && git submodule update`) and use Vivado/Vitis 2021.2 as described in that revision's README.
+
+Optional CPU/DDR overclock (out of spec for the XC7Z020-1, at your own risk): after `make`, run `make overclock OVERCLOCK_CPU_MULT=<n> OVERCLOCK_DDR_MULT=<n>`, then `make sdimg`. This only patches PLL multipliers in the FSBL's `ps7_init.c`. The DDR timings stay at the 525 MHz preset.
 
 If you need to update submodules to their pinned commits later:
 ```bash
@@ -145,4 +159,5 @@ build_sdimg/            # produced by `make sdimg`, ready to copy to an SD card
 ## Credits
 
 - [analogdevicesinc/plutosdr-fw](https://github.com/analogdevicesinc/plutosdr-fw) — original PlutoSDR firmware
-- [day0wl/libresdr-fw](https://github.com/day0wl/libresdr-fw) — LibreSDR (ZynqSDR) board-support patch this branch is based on
+- [day0wl/libresdr-fw](https://github.com/day0wl/libresdr-fw) — LibreSDR (ZynqSDR) board-support patch for v0.37
+- [hz12opensource/libresdr](https://github.com/hz12opensource/libresdr) — port of that patch to v0.38, source of the LVDS interface change
