@@ -18,6 +18,8 @@ In each repository, the `libre-v0.38` commit is a merge: the first parent is `li
 
 The v0.38 port was cross-checked against [hz12opensource/libresdr](https://github.com/hz12opensource/libresdr). Its CPU overclock (750 MHz on an XC7Z020-1), out-of-spec DDR timings, `-O3`/Spectre kernel hacks and iiod realtime tweaks were deliberately left out. The old branches `libre_v0.37` and `libre_v0.38` are kept unchanged for reference.
 
+Schematics: `docs/plutosdr_schematic_revd_0.1.pdf` (original ADALM-PLUTO) and `docs/zynqsdr_rev5.pdf` (LibreSDR rev5).
+
 ## Build Instructions
 
 ```bash
