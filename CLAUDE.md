@@ -56,13 +56,14 @@ make sdimg      # build_sdimg/: BOOT.bin, uImage, devicetree.dtb, uEnv.txt, uram
 - SoC **XC7Z020-1CLG400I** (speed grade −1: CPU max 667 MHz). 50 MHz PS_CLK.
   - The HDL project (inherited from day0wl) targets `xc7z020clg400-2`, so timing is analysed for −2, which is optimistic for this board.
   - With a 50 MHz PS_CLK, the requested 666.67 MHz becomes an actual **675 MHz** APU clock. This was the same in libre-v0.37, which runs stably.
+  - The chip on the user's board is marked only `XC7Z020 CLG400ABX2209` and has no speed-grade line. The grade cannot be read over JTAG either, so treat it as −1, as the schematic does.
 - RF: **AD9363**, 40 MHz reference (CLK-40M from a VCTCXO tuned by a DAC5311). Two RX and two TX on SMA. MMCX inputs for PPS and a 10 MHz external reference.
 - RAM: 2× **MT41K256M16TW** (DDR3L 1.35 V, 32-bit bus, 1 GiB). HDL uses the MT41J256M16 RE-125 preset at 525 MHz.
 - QSPI: **W25Q256JV** (Winbond, 32 MiB). DT compatible `winbond,w25q256`. Partitions: fsbl+uboot 1M, uboot-env 128k, nvmfs, linux 30M.
 - Ethernet: **RTL8211E-VB** RGMII PHY on MIO16–27 (the DT comment "Marvell 88e1512" is a leftover from Pluto), MDIO MIO52–53, PHY reset MIO46, default IP 192.168.1.10.
 - USB0 OTG via USB3320 ULPI, reset MIO47; USB gadget with RNDIS 192.168.2.1. UART0 on MIO14–15 is the console, reached through an onboard FT2232HQ, which also provides JTAG (`/dev/ttyUSB2`, 115200).
 - **AD9363 data bus is routed as LVDS pairs into bank 34 (VCCO 2.5 V)**: DATA_CLK N20/P20, FB_CLK N18/P19, RX_FRAME U18/U19, TX_FRAME Y16/Y17, RX_D0..5 and TX_D0..5 as in `projects/libre/system_constr.xdc`. Bank 35 is 3.3 V (LEDs, PL SPI).
-- PL LEDs: `pl_led0` on J20 and `pl_led1` on H20 (LVCMOS33), driven by EMIO GPIO 17/18, which is Linux `gpio0` 71/72. `pl_led1` carries the heartbeat trigger. The old day0wl `led0` on MIO15 was a mistake, because that pin is UART0.
+- PL LEDs: `pl_led0` on J20 and `pl_led1` on H20 (LVCMOS33), driven by EMIO GPIO 17/18, which is Linux `gpio0` 71/72. `pl_led1` carries the heartbeat trigger. The `board/libre` scripts (update.sh, update_frm.sh, automounter.sh, udc_handle_suspend.sh) use `pl_led1:blue` for flash and status indication. The old day0wl `led0` on MIO15 was a mistake, because that pin is UART0.
 - hw_serial: the kernel prints `SPI-NOR-UniqueID <hex>` for the Winbond flash (command 0x4B with 4 dummy bytes), and `board/libre/S23udc` parses it from dmesg.
 
 ## Rules that are easy to break
