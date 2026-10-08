@@ -68,6 +68,10 @@ make sdimg      # build_sdimg/: BOOT.bin, uImage, devicetree.dtb, uEnv.txt, uram
 
 ## Rules that are easy to break
 
+- **Hardware test status (2026-10-08, user's board):** both libre-v0.38 (CMOS) and the LVDS tip receive FM correctly in SDRangel on Windows.
+  - LVDS passes the AD9363 RX BIST tone (`bist_tone "2 0 0 0"`; mode 2 = RX, mode 1 is TX) cleanly in 2R2T at 30.72 Msps.
+  - **2R2T at 61.44 Msps (DATA_CLK 245.76 MHz, above the 125 MHz rx_clk constraint) killed the USB gadget, and the board needed a power cycle.** Do not test beyond the constraint without asking.
+- SD boot (`sdboot`) neither runs `adi_loadvals` nor adds `uboot=` to bootargs. As a result, `config.txt` settings such as attr_val/mode are not applied to the DT, and info.html shows no u-boot version. This is stock ADI behaviour.
 - **The CMOS/LVDS mode must match on both sides.** Both `hdl/projects/libre` (`CMOS_OR_LVDS_N`, IO standards, port names) and `linux/.../zynq-libre.dtsi` (`adi,lvds-mode-enable` vs `adi,full-port-enable`/`adi,swap-ports-enable`) have to agree. A mismatch boots, but the AD9363 interface tuning fails.
 - `board/libre` is a copy of `board/pluto` with LibreSDR edits. After updating to a new ADI release, diff `board/pluto` old→new and port the changes. `update_from_github.sh` is intentionally absent, because it would fetch Pluto firmware.
 - The old branch `libre_v0.38` has an `ADC_INIT_DELAY`, DDR timings and a 750 MHz APU setting. Do not copy them back in without a hardware test plan.
