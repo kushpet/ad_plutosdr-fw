@@ -102,6 +102,7 @@ make sdimg      # build_sdimg/: BOOT.bin, uImage, devicetree.dtb, uEnv.txt, uram
   - `qspiboot` builds bootargs with `maxcpus=${maxcpus}`, and ADI's default env (u-boot `include/configs/zynq-common.h`) has `maxcpus=1`.
   - `sdboot` sets no bootargs, so the kernel's CONFIG_CMDLINE applies and both cores run.
   - All throughput numbers above were measured on SD boot (2 cores). Libre-v0.37 on flash was single-core as well.
+  - Fixed after v0.38.2 (build-tested 2026-10-09, not yet on hardware): the u-boot default is now `maxcpus=2` (applies only to a fresh env, i.e. after a boot.frm flash), and config.txt [SYSTEM] has a `maxcpus` key (1|2; update.sh ignores other values). For an existing board, flash libre.frm and set `maxcpus = 2` in config.txt; no boot.frm reflash is needed. Flashing boot.frm resets the whole u-boot env (ipaddr_eth, xo_correction, ...) to defaults.
 - **Flashing via the PlutoSDR drive from this PC:**
   - `gio mount -e` fails (no permission on /dev/sdX), and `udisksctl power-off` only powers the port off; neither triggers `update.sh`. Ejecting from the file manager should work.
   - Fallback used on 2026-10-09: copy the .frm file, `sync`, unmount, then on the board console run `echo "" > /sys/kernel/config/usb_gadget/composite_gadget/functions/mass_storage.0/lun.0/file`. That is what update.sh waits for.
@@ -115,7 +116,7 @@ make sdimg      # build_sdimg/: BOOT.bin, uImage, devicetree.dtb, uEnv.txt, uram
 
 ## Open items / handoff (as of 2026-10-09)
 
-1. **Two CPU cores everywhere.** Set `maxcpus=2` for LibreSDR: either change the default in u-boot `zynq-common.h` (shared with Pluto, so guard it for libre), or add a `maxcpus` key to config.txt ([SYSTEM]) the same way `eth_mode` was done. Then rebuild, tag (`libre-v0.38.3`) and reflash boot.frm (the u-boot env lives in boot.frm). Re-measure the Ethernet streaming ceiling on flash boot.
+1. **Two CPU cores everywhere:** code is done and build-tested (u-boot default + config.txt `maxcpus`, see above). Remaining: the user flashes libre.frm, sets `maxcpus = 2`, and checks `nproc` and `/proc/cmdline`. Then tag `libre-v0.38.3` in all repos and re-measure the Ethernet streaming ceiling on flash boot.
 2. **USB drop at boot with the PHY down**: try another USB cable or port first. If drops persist, consider binding the UDC late (after boot completes); re-binding by hand after boot has always been stable.
 3. **SDR over Ethernet** needs a second gigabit NIC (the PC's only NIC carries the internet, the AX88179 dongle is unusable, and the user's switch is 100M). The NM profile `internet-dongle` exists with autoconnect off; `internet-mb` (enp3s0) is the internet now. The old `sdr-libresdr` profile was renamed to `internet-mb`.
 4. README: add the libre-v0.38.1 / v0.38.2 tags to the branches/tags table, and document `eth_mode` and the USB/Ethernet limitation.
