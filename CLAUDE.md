@@ -27,7 +27,7 @@ libre-v0.38  (tag)  merge: parent 1 = libre-v0.37, parent 2 = ADI v0.38 commit.
     │
 libre-v0.38.1 (tag) LVDS, DDR 500 MHz, Realtek PHY driver, S22ethlink, LEDs fix
     │
-libre-v0.38.2 (tag) + eth_mode (PHY powered down when unused). Flashed to the user's QSPI 2026-10-09.
+libre-v0.38.2 (tag) + eth_mode (PHY powered down when unused).
 libresdr tip        = libre-v0.38.2 (+ docs commits after it)
 ```
 
@@ -66,6 +66,11 @@ make sdimg      # build_sdimg/: BOOT.bin, uImage, devicetree.dtb, uEnv.txt, uram
   - The old default request was 533.33 MHz, which the 50 MHz crystal turns into 525 MHz. Its 3rd harmonic (1575.02 MHz) put a +36 dB spur 0.4 MHz from GPS L1. Do not go back to 525/533.
   - `PCW_UIPARAM_ACT_DDR_FREQ_MHZ` is only a display value; setting it changes nothing.
 - QSPI: **W25Q256JV** (Winbond, 32 MiB). DT compatible `winbond,w25q256`. Partitions: fsbl+uboot 1M, uboot-env 128k, nvmfs, linux 30M.
+  - Zynq QSPI uses 3-byte addresses; the upper 16 MiB is selected by the flash's Extended Address Register (EAR). EAR survives a soft reset (only a power cycle clears it), and the BootROM reads with whatever EAR is set.
+  - The Xilinx spi-nor code (linux `drivers/mtd/spi-nor/core.c`, `read_ear`/`spi_nor_write_ear`) did not know Winbond: dmesg `failed to read ear reg`, Linux assumed bank 0 and could not change EAR. When u-boot left EAR=1, every Linux mtd access went to +16 MiB: update.sh wrote .frm files to the upper half, md5 checks via /dev/mtd* passed (same wrong bank), the old image kept booting, and soft reboots ran a stale Chinese u-boot (Oct 2023) that sat at 0x1000000. Fixed after v0.38.2 (Winbond: RDEAR 0xC8, WREN + WREAR 0xC5); `spi_nor_shutdown` now really clears EAR before reboot. Verified on hardware 2026-10-09. Same bug: hz12opensource/libresdr#28. Xilinx 6.1 (ADI v0.39) still lacks Winbond there, so keep the patch when merging.
+  - The upper half still holds stale copies (Chinese boot image at 0x1000000, env at 0x1100000, an image at 0x1200000). Harmless; do not rely on them.
+  - To check what is physically in flash independently of Linux, use u-boot: `sf probe 0:0 50000000 0; sf read 0x3000000 <addr> 0x100; md.b 0x3000000 0x30`.
+- DFU button **SW1 `DFU_KEY` is on MIO12** (10k pull-up to 3.3 V, pressed = 0). Pluto code used MIO14, which on LibreSDR is UART0 RX: u-boot sometimes saw a false "Button pressed", loaded its default env (ignoring config.txt) and the button never worked; Linux gpio-keys fired BTN_0 (automounter remove_all) on console input. Fixed after v0.38.2 in u-boot (misc_init_r, qspiboot) and the Linux DT. u-boot messages now go to UART0 (serial@e0000000) instead of Pluto's UART1.
 - Ethernet: **RTL8211E-VB** RGMII PHY on MIO16–27 (the DT comment "Marvell 88e1512" is a leftover from Pluto), MDIO MIO52–53, PHY reset MIO46, default IP 192.168.1.10.
 - USB0 OTG via USB3320 ULPI, reset MIO47; USB gadget with RNDIS 192.168.2.1. UART0 on MIO14–15 is the console, reached through an onboard FT2232HQ, which also provides JTAG (`/dev/ttyUSB2`, 115200).
 - **AD9363 data bus is routed as LVDS pairs into bank 34 (VCCO 2.5 V)**: DATA_CLK N20/P20, FB_CLK N18/P19, RX_FRAME U18/U19, TX_FRAME Y16/Y17, RX_D0..5 and TX_D0..5 as in `projects/libre/system_constr.xdc`. Bank 35 is 3.3 V (LEDs, PL SPI).
@@ -102,12 +107,14 @@ make sdimg      # build_sdimg/: BOOT.bin, uImage, devicetree.dtb, uEnv.txt, uram
   - `qspiboot` builds bootargs with `maxcpus=${maxcpus}`, and ADI's default env (u-boot `include/configs/zynq-common.h`) has `maxcpus=1`.
   - `sdboot` sets no bootargs, so the kernel's CONFIG_CMDLINE applies and both cores run.
   - All throughput numbers above were measured on SD boot (2 cores). Libre-v0.37 on flash was single-core as well.
-  - Fixed after v0.38.2 (build-tested 2026-10-09, not yet on hardware): the u-boot default is now `maxcpus=2` (applies only to a fresh env, i.e. after a boot.frm flash), and config.txt [SYSTEM] has a `maxcpus` key (1|2; update.sh ignores other values). For an existing board, flash libre.frm and set `maxcpus = 2` in config.txt; no boot.frm reflash is needed. Flashing boot.frm resets the whole u-boot env (ipaddr_eth, xo_correction, ...) to defaults.
+  - Fixed after v0.38.2 (verified on hardware 2026-10-09): the u-boot default is now `maxcpus=2` (applies to a fresh env, i.e. after a boot.frm flash), and config.txt [SYSTEM] has a `maxcpus` key (1|2; update.sh ignores other values). `maxcpus = 1` gave 1 core, `2` gave 2. Flashing boot.frm resets the whole u-boot env (ipaddr_eth, xo_correction, fit_size, ...) to defaults; set `fit_size` again (`fw_setenv fit_size <hex size of libre.frm minus 33>`), as update.sh does for libre.frm, or u-boot falls back to a 30 MiB read.
 - **Flashing via the PlutoSDR drive from this PC:**
   - `gio mount -e` fails (no permission on /dev/sdX), and `udisksctl power-off` only powers the port off; neither triggers `update.sh`. Ejecting from the file manager should work.
   - Fallback used on 2026-10-09: copy the .frm file, `sync`, unmount, then on the board console run `echo "" > /sys/kernel/config/usb_gadget/composite_gadget/functions/mass_storage.0/lun.0/file`. That is what update.sh waits for.
   - Flash boot.frm before libre.frm.
-  - Verify with `head -c <size> /dev/mtd0|mtd3 | md5sum` against the .frm minus its 33-byte md5 trailer (boot.frm also minus 1024 + 131072 bytes).
+  - Verify with `head -c <size> /dev/mtd0|mtd3 | md5sum` against the .frm minus its 33-byte md5 trailer (boot.frm also minus 1024 + 131072 bytes). This is only trustworthy on a kernel with the Winbond EAR fix (no `failed to read ear reg` in dmesg).
+  - Flashing with both libre.frm and boot.frm on the drive in one eject works: update.sh writes both, then reboots once.
+  - DFU: `device_reboot ram` (image to RAM only, no flash write: `dfu-util -D build/libre.dfu -a firmware.dfu; dfu-util -a firmware.dfu -e`) or `device_reboot sf` (flash). Useful to test a kernel without touching flash.
 - **The CMOS/LVDS mode must match on both sides.** Both `hdl/projects/libre` (`CMOS_OR_LVDS_N`, IO standards, port names) and `linux/.../zynq-libre.dtsi` (`adi,lvds-mode-enable` vs `adi,full-port-enable`/`adi,swap-ports-enable`) have to agree. A mismatch boots, but the AD9363 interface tuning fails.
 - `board/libre` is a copy of `board/pluto` with LibreSDR edits. After updating to a new ADI release, diff `board/pluto` old→new and port the changes. `update_from_github.sh` is intentionally absent, because it would fetch Pluto firmware.
 - The old branch `libre_v0.38` has an `ADC_INIT_DELAY`, DDR timings and a 750 MHz APU setting. Do not copy them back in without a hardware test plan.
@@ -116,7 +123,7 @@ make sdimg      # build_sdimg/: BOOT.bin, uImage, devicetree.dtb, uEnv.txt, uram
 
 ## Open items / handoff (as of 2026-10-09)
 
-1. **Two CPU cores everywhere:** code is done and build-tested (u-boot default + config.txt `maxcpus`, see above). Remaining: the user flashes libre.frm, sets `maxcpus = 2`, and checks `nproc` and `/proc/cmdline`. Then tag `libre-v0.38.3` in all repos and re-measure the Ethernet streaming ceiling on flash boot.
+1. **Done 2026-10-09 (hardware-verified):** maxcpus via config.txt, Winbond EAR kernel fix, DFU button on MIO12 (the power-up button test is pending, see below), UART0 for u-boot messages. The board runs the `-dirty` build from the libresdr tip. Remaining: clean rebuild, tag `libre-v0.38.3` in all repos, reflash, and re-measure the Ethernet streaming ceiling on flash boot (2 cores). The board's env is now the default (ipaddr_eth 192.168.1.10, eth_mode auto).
 2. **USB drop at boot with the PHY down**: try another USB cable or port first. If drops persist, consider binding the UDC late (after boot completes); re-binding by hand after boot has always been stable.
 3. **SDR over Ethernet** needs a second gigabit NIC (the PC's only NIC carries the internet, the AX88179 dongle is unusable, and the user's switch is 100M). The NM profile `internet-dongle` exists with autoconnect off; `internet-mb` (enp3s0) is the internet now. The old `sdr-libresdr` profile was renamed to `internet-mb`.
 4. README: add the libre-v0.38.1 / v0.38.2 tags to the branches/tags table, and document `eth_mode` and the USB/Ethernet limitation.
