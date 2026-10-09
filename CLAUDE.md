@@ -24,7 +24,11 @@ libre-v0.37  (tag)  ADI v0.37 + day0wl LibreSDR patch + local fixes; tested on h
     │
 libre-v0.38  (tag)  merge: parent 1 = libre-v0.37, parent 2 = ADI v0.38 commit.
     │               Functionally equal to libre-v0.37: CMOS, no overclock.
-libresdr tip        + LVDS switch (hdl + linux only), + docs
+    │
+libre-v0.38.1 (tag) LVDS, DDR 500 MHz, Realtek PHY driver, S22ethlink, LEDs fix
+    │
+libre-v0.38.2 (tag) + eth_mode (PHY powered down when unused). Flashed to the user's QSPI 2026-10-09.
+libresdr tip        = libre-v0.38.2 (+ docs commits after it)
 ```
 
 - ADI's own release tags `v0.37`/`v0.38` exist in the superproject; do not move them.
@@ -73,14 +77,19 @@ make sdimg      # build_sdimg/: BOOT.bin, uImage, devicetree.dtb, uEnv.txt, uram
 - **Hardware test status (2026-10-08, user's board):** both libre-v0.38 (CMOS) and the LVDS tip receive FM correctly in SDRangel on Windows.
   - LVDS passes the AD9363 RX BIST tone (`bist_tone "2 0 0 0"`; mode 2 = RX, mode 1 is TX) cleanly in 2R2T at 30.72 Msps.
   - **2R2T at 61.44 Msps (DATA_CLK 245.76 MHz, above the 125 MHz rx_clk constraint) killed the USB gadget, and the board needed a power cycle.** Do not test beyond the constraint without asking.
-- **USB vs Ethernet at boot:** if the gigabit PHY negotiated its link at the same moment the host enumerated the USB gadget, the host dropped the board (`device descriptor read/64, error -71`). `board/libre/S22ethlink` brings eth0 up and waits up to 5 s for carrier before `S23udc` binds the UDC. Verified on hardware 2026-10-08. Steady-state USB + 1G Ethernet works fine.
-  - While debugging this, the user's AX88179 USB-Ethernet dongle got stuck after a board crash and reported every frame as `rx_errors`. Replugging the dongle fixed it, so check the PC side before blaming the board.
+- **USB vs Ethernet: the core board problem, only worked around.** Facts from 2026-10-08/09:
+  - Whenever the Ethernet PHY is powered (link up, or even with no cable), the host drops the board's USB gadget within about 10-60 s (`device descriptor read/64, error -71`). Board-side Linux sees nothing and keeps the UDC "configured".
+  - With `ip link set eth0 down` (PHY powered down), USB stays up (2-3 min tests).
+  - The PHY negotiating a link while the host enumerates also kills enumeration.
+  - Likely hardware: RGMII (MIO16-27) and ULPI (MIO28-39) share MIO bank 501, and fast slew on RGMII TX dropped USB instantly. Unproven.
+  - Workaround in v0.38.2: `board/libre/S22ethlink` + `eth_mode` (u-boot env, `config.txt` [USB_ETHERNET]: `auto` default = keep the PHY up only if a cable has carrier within 5 s at boot, otherwise power it down; `on`; `off`). S40network skips `auto eth0` when `/var/run/eth0.off` exists.
+  - Result: USB-only use is stable. **USB and Ethernet together are not reliable.** Use one of them for data. While Ethernet is in use, expect the USB drive and config.txt to drop out.
+  - One USB drop at boot was also seen with the PHY powered down (2026-10-09 13:45). The cause is unknown; a different USB cable has not been tried yet.
 - **Ethernet (verified 2026-10-09):** 1000BASE-T to a PC on-board NIC (r8169) works.
   - iperf3 board->PC: 481 Mbit/s, 0 errors.
   - libiio, 1 channel: 10 Msps continuous without loss. The ceiling is about 12.5 Msps (~50 MB/s, board CPU / iiod bound). USB gives about 6 Msps.
   - The Realtek PHY driver is enabled; the RTL8211E binds to it.
-  - **Do not use the user's AX88179 USB-Ethernet dongle for the SDR.** Under load it sends PAUSE frames, then gets stuck reporting every frame as `rx_errors` until replugged. Every "gigabit is broken" symptom seen on 2026-10-08/09 went through that dongle. The user now runs internet on the dongle and the SDR on the motherboard NIC: NM profile `sdr-libresdr` on enp3s0, 192.168.10.120/24, never-default; the board's `ipaddr_eth` is 192.168.10.10, set via config.txt.
-  - **Board-side issue that remains:** heavy Ethernet traffic (even at 100M), or bringing the 1G link up at boot, can drop the board's USB gadget (host: `device descriptor read/64, error -71`). The kernel and Ethernet keep running. Setting fast slew on the RGMII TX MIO pins dropped USB immediately; the ULPI pins MIO28-39 share bank 501 with RGMII MIO16-27. Use USB for configuration (PlutoSDR drive, config.txt) and Ethernet for streaming; do not stream over both. Keep the USB gadget enabled, since config.txt needs it.
+  - **Do not use the user's AX88179 USB-Ethernet dongle for the SDR.** Under load it sends PAUSE frames, then gets stuck reporting every frame as `rx_errors` until replugged. Every "gigabit is broken" symptom seen on 2026-10-08/09 went through that dongle. The dongle has since been removed. The motherboard NIC carries the internet again (NM profile `internet-mb`); see the open items. The board's `ipaddr_eth` is still 192.168.10.10.
   - The schematic feeds RTL8211E CKXTAL1 from the 50 MHz PS oscillator (datasheet: 25 MHz), yet the link works. This is unexplained and has not been investigated further.
 - After the board is power-cycled, the FT4232 console may re-enumerate under a different /dev/ttyUSBn. The console is FTDI interface 02: check `/sys/class/tty/ttyUSB*/device/../bInterfaceNumber`.
 - **RX spurs near GPS L1** (measured 2026-10-09, 50 ohm on RX1, gain 71 dB, 1542-1602 MHz):
@@ -89,8 +98,27 @@ make sdimg      # build_sdimg/: BOOT.bin, uImage, devicetree.dtb, uEnv.txt, uram
   - Ethernet on/off/100M/1G and the USB gadget bound/unbound made no measurable difference.
   - `spurscan.py`-style method: 4 LOs at 20 Msps, ±7.5 MHz kept per LO, 64k FFT, 32 averages.
 - SD boot (`sdboot`) neither runs `adi_loadvals` nor adds `uboot=` to bootargs. As a result, `config.txt` settings such as attr_val/mode are not applied to the DT, and info.html shows no u-boot version. This is stock ADI behaviour.
+- **Only one CPU core when booting from QSPI:**
+  - `qspiboot` builds bootargs with `maxcpus=${maxcpus}`, and ADI's default env (u-boot `include/configs/zynq-common.h`) has `maxcpus=1`.
+  - `sdboot` sets no bootargs, so the kernel's CONFIG_CMDLINE applies and both cores run.
+  - All throughput numbers above were measured on SD boot (2 cores). Libre-v0.37 on flash was single-core as well.
+- **Flashing via the PlutoSDR drive from this PC:**
+  - `gio mount -e` fails (no permission on /dev/sdX), and `udisksctl power-off` only powers the port off; neither triggers `update.sh`. Ejecting from the file manager should work.
+  - Fallback used on 2026-10-09: copy the .frm file, `sync`, unmount, then on the board console run `echo "" > /sys/kernel/config/usb_gadget/composite_gadget/functions/mass_storage.0/lun.0/file`. That is what update.sh waits for.
+  - Flash boot.frm before libre.frm.
+  - Verify with `head -c <size> /dev/mtd0|mtd3 | md5sum` against the .frm minus its 33-byte md5 trailer (boot.frm also minus 1024 + 131072 bytes).
 - **The CMOS/LVDS mode must match on both sides.** Both `hdl/projects/libre` (`CMOS_OR_LVDS_N`, IO standards, port names) and `linux/.../zynq-libre.dtsi` (`adi,lvds-mode-enable` vs `adi,full-port-enable`/`adi,swap-ports-enable`) have to agree. A mismatch boots, but the AD9363 interface tuning fails.
 - `board/libre` is a copy of `board/pluto` with LibreSDR edits. After updating to a new ADI release, diff `board/pluto` old→new and port the changes. `update_from_github.sh` is intentionally absent, because it would fetch Pluto firmware.
 - The old branch `libre_v0.38` has an `ADC_INIT_DELAY`, DDR timings and a 750 MHz APU setting. Do not copy them back in without a hardware test plan.
 - Verify any pin change against `docs/zynqsdr_rev5.pdf`. `pdftotext -layout` extracts net names and ball numbers well enough to grep.
 - Changes must be verified on the real board by the user. Say clearly what was only build-tested.
+
+## Open items / handoff (as of 2026-10-09)
+
+1. **Two CPU cores everywhere.** Set `maxcpus=2` for LibreSDR: either change the default in u-boot `zynq-common.h` (shared with Pluto, so guard it for libre), or add a `maxcpus` key to config.txt ([SYSTEM]) the same way `eth_mode` was done. Then rebuild, tag (`libre-v0.38.3`) and reflash boot.frm (the u-boot env lives in boot.frm). Re-measure the Ethernet streaming ceiling on flash boot.
+2. **USB drop at boot with the PHY down**: try another USB cable or port first. If drops persist, consider binding the UDC late (after boot completes); re-binding by hand after boot has always been stable.
+3. **SDR over Ethernet** needs a second gigabit NIC (the PC's only NIC carries the internet, the AX88179 dongle is unusable, and the user's switch is 100M). The NM profile `internet-dongle` exists with autoconnect off; `internet-mb` (enp3s0) is the internet now. The old `sdr-libresdr` profile was renamed to `internet-mb`.
+4. README: add the libre-v0.38.1 / v0.38.2 tags to the branches/tags table, and document `eth_mode` and the USB/Ethernet limitation.
+5. Possibly investigate the 1560 MHz spur (39×40 MHz). It rose from +24 to +36 dB after the DDR-500 HDL rebuild, presumably due to placement.
+6. The user's next big plan: Ubuntu 22.04 + newer Vivado on another disk, then follow ADI v0.39/v0.40 (see project memory). The user prefers config via config.txt, concrete verified steps, and no speculative ideas.
+
