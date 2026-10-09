@@ -28,7 +28,11 @@ libre-v0.38  (tag)  merge: parent 1 = libre-v0.37, parent 2 = ADI v0.38 commit.
 libre-v0.38.1 (tag) LVDS, DDR 500 MHz, Realtek PHY driver, S22ethlink, LEDs fix
     │
 libre-v0.38.2 (tag) + eth_mode (PHY powered down when unused).
-libresdr tip        = libre-v0.38.2 (+ docs commits after it)
+    │
+libre-v0.38.3 (tag) + Winbond EAR flash fix (kernel), DFU button on MIO12, u-boot
+    │               console on UART0, maxcpus=2 default + config.txt key.
+    │               Flashed to the user's QSPI 2026-10-09 (md5 verified, fixed kernel).
+libresdr tip        = libre-v0.38.3 (+ docs commits after it)
 ```
 
 - ADI's own release tags `v0.37`/`v0.38` exist in the superproject; do not move them.
@@ -123,7 +127,7 @@ make sdimg      # build_sdimg/: BOOT.bin, uImage, devicetree.dtb, uEnv.txt, uram
 
 ## Open items / handoff (as of 2026-10-09)
 
-1. **Done 2026-10-09 (hardware-verified):** maxcpus via config.txt, Winbond EAR kernel fix, DFU button on MIO12 (the power-up button test is pending, see below), UART0 for u-boot messages. The board runs the `-dirty` build from the libresdr tip. Remaining: clean rebuild, tag `libre-v0.38.3` in all repos, reflash, and re-measure the Ethernet streaming ceiling on flash boot (2 cores). The board's env is now the default (ipaddr_eth 192.168.1.10, eth_mode auto).
+1. **Done (libre-v0.38.3, 2026-10-09, hardware-verified):** maxcpus via config.txt, Winbond EAR kernel fix, DFU button on MIO12 (power-up test passed), UART0 for u-boot messages. Remaining: re-measure the Ethernet streaming ceiling on flash boot (2 cores). The board's env is the default (ipaddr_eth 192.168.1.10, eth_mode auto); the user's earlier settings were lost with the boot.frm flash.
 2. **USB drop at boot with the PHY down**: try another USB cable or port first. If drops persist, consider binding the UDC late (after boot completes); re-binding by hand after boot has always been stable.
 3. **SDR over Ethernet** needs a second gigabit NIC (the PC's only NIC carries the internet, the AX88179 dongle is unusable, and the user's switch is 100M). The NM profile `internet-dongle` exists with autoconnect off; `internet-mb` (enp3s0) is the internet now. The old `sdr-libresdr` profile was renamed to `internet-mb`.
 4. README: add the libre-v0.38.1 / v0.38.2 tags to the branches/tags table, and document `eth_mode` and the USB/Ethernet limitation.
