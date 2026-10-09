@@ -58,7 +58,9 @@ make sdimg      # build_sdimg/: BOOT.bin, uImage, devicetree.dtb, uEnv.txt, uram
   - With a 50 MHz PS_CLK, the requested 666.67 MHz becomes an actual **675 MHz** APU clock. This was the same in libre-v0.37, which runs stably.
   - The chip on the user's board is marked only `XC7Z020 CLG400ABX2209` and has no speed-grade line. The grade cannot be read over JTAG either, so treat it as −1, as the schematic does.
 - RF: **AD9363**, 40 MHz reference (CLK-40M from a VCTCXO tuned by a DAC5311). Two RX and two TX on SMA. MMCX inputs for PPS and a 10 MHz external reference.
-- RAM: 2× **MT41K256M16TW** (DDR3L 1.35 V, 32-bit bus, 1 GiB). HDL uses the MT41J256M16 RE-125 preset at 525 MHz.
+- RAM: 2× **MT41K256M16TW** (DDR3L 1.35 V, 32-bit bus, 1 GiB). HDL uses the MT41J256M16 RE-125 preset with **DDR at 500 MHz** (`PCW_UIPARAM_DDR_FREQ_MHZ 500`, PLL 1000/2).
+  - The old default request was 533.33 MHz, which the 50 MHz crystal turns into 525 MHz. Its 3rd harmonic (1575.02 MHz) put a +36 dB spur 0.4 MHz from GPS L1. Do not go back to 525/533.
+  - `PCW_UIPARAM_ACT_DDR_FREQ_MHZ` is only a display value; setting it changes nothing.
 - QSPI: **W25Q256JV** (Winbond, 32 MiB). DT compatible `winbond,w25q256`. Partitions: fsbl+uboot 1M, uboot-env 128k, nvmfs, linux 30M.
 - Ethernet: **RTL8211E-VB** RGMII PHY on MIO16–27 (the DT comment "Marvell 88e1512" is a leftover from Pluto), MDIO MIO52–53, PHY reset MIO46, default IP 192.168.1.10.
 - USB0 OTG via USB3320 ULPI, reset MIO47; USB gadget with RNDIS 192.168.2.1. UART0 on MIO14–15 is the console, reached through an onboard FT2232HQ, which also provides JTAG (`/dev/ttyUSB2`, 115200).
@@ -81,6 +83,11 @@ make sdimg      # build_sdimg/: BOOT.bin, uImage, devicetree.dtb, uEnv.txt, uram
   - **Board-side issue that remains:** heavy Ethernet traffic (even at 100M), or bringing the 1G link up at boot, can drop the board's USB gadget (host: `device descriptor read/64, error -71`). The kernel and Ethernet keep running. Setting fast slew on the RGMII TX MIO pins dropped USB immediately; the ULPI pins MIO28-39 share bank 501 with RGMII MIO16-27. Use USB for configuration (PlutoSDR drive, config.txt) and Ethernet for streaming; do not stream over both. Keep the USB gadget enabled, since config.txt needs it.
   - The schematic feeds RTL8211E CKXTAL1 from the 50 MHz PS oscillator (datasheet: 25 MHz), yet the link works. This is unexplained and has not been investigated further.
 - After the board is power-cycled, the FT4232 console may re-enumerate under a different /dev/ttyUSBn. The console is FTDI interface 02: check `/sys/class/tty/ttyUSB*/device/../bInterfaceNumber`.
+- **RX spurs near GPS L1** (measured 2026-10-09, 50 ohm on RX1, gain 71 dB, 1542-1602 MHz):
+  - with DDR at 500 MHz, the remaining spurs are 1560.000 MHz (39×40 MHz, about +36 dB), 1600.000 MHz (40×40 MHz, about +39 dB) and 1500.02 MHz (3×DDR);
+  - there is nothing in the L1 band;
+  - Ethernet on/off/100M/1G and the USB gadget bound/unbound made no measurable difference.
+  - `spurscan.py`-style method: 4 LOs at 20 Msps, ±7.5 MHz kept per LO, 64k FFT, 32 averages.
 - SD boot (`sdboot`) neither runs `adi_loadvals` nor adds `uboot=` to bootargs. As a result, `config.txt` settings such as attr_val/mode are not applied to the DT, and info.html shows no u-boot version. This is stock ADI behaviour.
 - **The CMOS/LVDS mode must match on both sides.** Both `hdl/projects/libre` (`CMOS_OR_LVDS_N`, IO standards, port names) and `linux/.../zynq-libre.dtsi` (`adi,lvds-mode-enable` vs `adi,full-port-enable`/`adi,swap-ports-enable`) have to agree. A mismatch boots, but the AD9363 interface tuning fails.
 - `board/libre` is a copy of `board/pluto` with LibreSDR edits. After updating to a new ADI release, diff `board/pluto` old→new and port the changes. `update_from_github.sh` is intentionally absent, because it would fetch Pluto firmware.
