@@ -12,7 +12,10 @@ The main branch is `libresdr`. The same branch name is used in all four submodul
 | --- | --- | --- | --- |
 | tag `libre-v0.37` | ADI v0.37 + [day0wl](https://github.com/day0wl/libresdr-fw) patch + local fixes | Vivado/Vitis **2021.2** | Tested on hardware. AD9363 in CMOS mode. |
 | tag `libre-v0.38` | ADI v0.38 + the same LibreSDR support | Vivado **2022.2** | Functionally the same as `libre-v0.37` (CMOS mode, no overclock). |
-| `libresdr` (tip) | `libre-v0.38` + switch to LVDS | Vivado **2022.2** | AD9363 data interface in LVDS mode (the board is routed for it). |
+| tag `libre-v0.38.1` | `libre-v0.38` + LVDS | Vivado **2022.2** | AD9363 data interface in LVDS mode (the board is routed for it). DDR at 500 MHz (removes a spur next to GPS L1), Realtek PHY driver, LED fixes. |
+| tag `libre-v0.38.2` | `libre-v0.38.1` + `eth_mode` | Vivado **2022.2** | The Ethernet PHY is powered down when unused, because a running PHY disturbs USB (see below). |
+| tag `libre-v0.38.3` | `libre-v0.38.2` + fixes | Vivado **2022.2** | **QSPI flash writes fixed** (Winbond W25Q256 above 16 MiB, see below). DFU button works (SW1 on MIO12). Both CPU cores on flash boot (`maxcpus`). |
+| `libresdr` (tip) | `libre-v0.38.3` + docs | Vivado **2022.2** | |
 
 In each repository, the `libre-v0.38` commit is a merge: the first parent is `libre-v0.37` and the second is the ADI v0.38 commit. The ADI history therefore stays reachable through the branch.
 
@@ -59,7 +62,7 @@ make sdimg    # SD card boot files:      build_sdimg/
 
 To build `libre-v0.37`: `git checkout libre-v0.37 && git submodule update`. Then use Vitis 2021.2 for `VIVADO_SETTINGS`, and also set `CROSS_COMPILE=arm-linux-gnueabihf-` and add `<Vitis 2021.2>/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin` to `PATH`.
 
-Optional CPU/DDR overclock (out of spec, at your own risk): after `make`, run `make overclock OVERCLOCK_CPU_MULT=<n> OVERCLOCK_DDR_MULT=<n>`, then `make sdimg`. This only patches the PLL multipliers in the FSBL's `ps7_init.c`. The DDR timings stay at the 525 MHz preset.
+Optional CPU/DDR overclock (out of spec, at your own risk): after `make`, run `make overclock OVERCLOCK_CPU_MULT=<n> OVERCLOCK_DDR_MULT=<n>`, then `make sdimg`. This only patches the PLL multipliers in the FSBL's `ps7_init.c`. The DDR timings stay at the preset.
 
 ## Booting from an SD card (flash is not touched)
 
@@ -83,10 +86,12 @@ Insert the card, connect the board and power it on. Signs that it booted:
 - `pl_led1` blinks a heartbeat.
 - On the debug USB port (onboard FT2232HQ), the serial console `/dev/ttyUSB2` (115200 8N1) shows the u-boot and kernel log. u-boot prints `Copying Linux from SD to RAM...`.
 - On the OTG USB port, the board appears like a PlutoSDR: an RNDIS network interface with the board at `192.168.2.1` (your PC gets `192.168.2.10` over DHCP), plus a USB drive named **PlutoSDR**.
-- Gigabit Ethernet comes up with the static address `192.168.1.10`.
+- Gigabit Ethernet comes up with the static address `192.168.1.10`, but only if a cable with link is plugged in at boot (`eth_mode = auto`, see below).
 - Log in with `ssh root@192.168.2.1` (password `analog`), or test the radio with `iio_info -u ip:192.168.2.1`.
 
 ## Writing the firmware to the internal QSPI flash
+
+> **Upgrading from firmware older than `libre-v0.38.3` (including the factory firmware):** the old kernel cannot handle the upper half of the 32 MiB Winbond W25Q256 flash (dmesg: `failed to read ear reg`). Depending on what u-boot left in the flash's Extended Address Register, the old kernel may write the `.frm` files 16 MiB too high. The md5 check passes anyway, the old firmware keeps booting, and soft reboots may start a stale bootloader. Do the first upgrade from a board that runs the **new** firmware: boot it from an SD card (see above), or load it into RAM over DFU (see [DFU](#dfu-mode)). Then flash as described below. From `libre-v0.38.3` on, updates through the drive are reliable. The same bug is reported in [hz12opensource/libresdr#28](https://github.com/hz12opensource/libresdr/issues/28).
 
 This is done from a running board, booted either from SD or from the existing flash, through the **PlutoSDR** USB drive, the same way as on a stock Pluto. The board checks the md5 sum embedded in each `.frm` file before writing it.
 
@@ -98,6 +103,48 @@ This is done from a running board, booted either from SD or from the existing fl
 Do `boot.frm` first and `libre.frm` second. Writing `boot.frm` resets the u-boot environment, including `fit_size`, which `libre.frm` sets to the image size. The board still boots if the order is reversed, because u-boot falls back to reading the whole 30 MB partition, but booting is slower. For later updates, usually only `libre.frm` is needed. You can also copy the whole `libresdr-fw-*.zip` to the drive, and the board unpacks the `.frm` files from it itself.
 
 If the board does not boot from flash afterwards, insert the SD card. It always takes priority, so you can repeat the procedure.
+
+## DFU mode
+
+In DFU mode u-boot does not start Linux. Instead it appears on the OTG USB port as a DFU device (`0456:b674`) with the flash partitions `boot.dfu`, `firmware.dfu`, `uboot-env.dfu`, and `dfu-util` writes them directly. u-boot addresses the whole flash correctly, so DFU also works from a board whose old kernel cannot.
+
+Ways to enter it:
+- Hold the **DFU button (SW1)** while powering on, release it after 2–3 s (from `libre-v0.38.3`; older u-boot read the button from the wrong pin).
+- From a running board: `device_reboot sf` (flash DFU) or `device_reboot ram` (RAM DFU).
+
+```bash
+dfu-util -l                                        # the board should be listed
+# flash DFU:
+dfu-util -D build/libre.dfu -a firmware.dfu
+dfu-util -D build/boot.dfu -a boot.dfu
+dfu-util -D build/uboot-env.dfu -a uboot-env.dfu   # write this one last
+dfu-util -a firmware.dfu -e                        # leave DFU and boot
+# RAM DFU (nothing is written to flash; the image runs once):
+dfu-util -D build/libre.dfu -a firmware.dfu && dfu-util -a firmware.dfu -e
+```
+
+RAM DFU is the safe way to try a new kernel or to run new firmware for a first flash upgrade.
+
+## Board settings (config.txt)
+
+Settings live in the u-boot environment and are edited through `config.txt` on the PlutoSDR drive: edit, save, eject. The board writes the values and regenerates the file at the next boot. Besides the stock Pluto keys, this firmware adds:
+
+| Section | Key | Values | Meaning |
+| --- | --- | --- | --- |
+| `[USB_ETHERNET]` | `eth_mode` | `auto` (default), `on`, `off` | Onboard Ethernet. `auto`: at boot, keep the PHY powered only if a cable has link within 5 s; otherwise power it down. |
+| `[SYSTEM]` | `maxcpus` | `1`, `2` (default) | CPU cores used when booting from flash. A reboot is needed after changing it. |
+
+Writing `boot.frm` resets the whole environment to defaults, including these keys and the network addresses.
+
+### USB and Ethernet together are not reliable
+
+On this board, a powered Ethernet PHY disturbs the USB link: the host drops the board's USB device (`device descriptor read/64, error -71`) within 10–60 s, even with no cable. The cause is probably in the hardware and is not proven. This is why `eth_mode = auto` powers the PHY down when no cable is plugged in at boot. Use either USB or Ethernet for data. While Ethernet is in use, expect the USB drive and `config.txt` to disappear; set the network addresses before plugging in the cable.
+
+Measured: Ethernet (1000BASE-T, direct to a PC NIC) streams one channel at 10 Msps without loss, while USB manages about 6 Msps. An occasional USB drop shortly after boot has also been seen with the PHY powered down. If the board disappears from USB while its console still works, re-binding the USB controller restores it:
+
+```bash
+G=/sys/kernel/config/usb_gadget/composite_gadget; echo "" > $G/UDC; sleep 2; echo ci_hdrc.0 > $G/UDC
+```
 
 ## Troubleshooting
 
