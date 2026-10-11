@@ -1,5 +1,7 @@
 # Plan: merge ADI v0.39 into `libresdr` and build with Vivado 2025.2
 
+> **Status: done on 2026-10-11.** Tag `libre-v0.39` is pushed in all five repositories and flashed on the user's board. What differed from this plan (release-branch merges in hdl/linux, `REQUIRED_VIVADO_VERSION` instead of `ADI_IGNORE_VERSION_CHECK`, separate ejects for boot.frm and libre.frm, the UART1 and `USB_ULPI` findings) is recorded in `CLAUDE.md`. This file is kept as a record.
+
 Written 2026-10-11 on the old system (Ubuntu 20.04, Vivado/Vitis 2022.2), to be carried out on the user's other system (Ubuntu 22.04, Vivado 2025.2). Read `CLAUDE.md` first: it holds the board facts, the repository rules and the open items. Local Claude memory does not move between systems, so everything needed is in `CLAUDE.md`, `README.md` and this file.
 
 Goal: tag `libre-v0.39` in all repositories, built with Vivado 2025.2, with every LibreSDR fix of `libre-v0.38.3` kept, and verified on the board.

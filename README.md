@@ -15,9 +15,10 @@ The main branch is `libresdr`. The same branch name is used in all four submodul
 | tag `libre-v0.38.1` | `libre-v0.38` + LVDS | Vivado **2022.2** | AD9363 data interface in LVDS mode (the board is routed for it). DDR at 500 MHz (removes a spur next to GPS L1), Realtek PHY driver, LED fixes. |
 | tag `libre-v0.38.2` | `libre-v0.38.1` + `eth_mode` | Vivado **2022.2** | The Ethernet PHY is powered down when unused, because a running PHY disturbs USB (see below). |
 | tag `libre-v0.38.3` | `libre-v0.38.2` + fixes | Vivado **2022.2** | **QSPI flash writes fixed** (Winbond W25Q256 above 16 MiB, see below). DFU button works (SW1 on MIO12). Both CPU cores on flash boot (`maxcpus`). |
-| `libresdr` (tip) | `libre-v0.38.3` + docs | Vivado **2022.2** | |
+| tag `libre-v0.39` | ADI v0.39 + everything from `libre-v0.38.3` | Vivado **2025.2** | Linux 6.1, libiio 0.26. Tested on hardware (RAM boot and flash). UART1 removed from the device tree; `info.html` compares the firmware's ADI base version with ADI's latest release. |
+| `libresdr` (tip) | `libre-v0.39` + docs | Vivado **2025.2** | |
 
-In each repository, the `libre-v0.38` commit is a merge: the first parent is `libre-v0.37` and the second is the ADI v0.38 commit. The ADI history therefore stays reachable through the branch.
+In each repository, the `libre-v0.38` and `libre-v0.39` commits are merges: the first parent is the previous LibreSDR state and the second is the ADI release commit. The ADI history therefore stays reachable through the branch. ADI v0.39 targets Vivado 2023.2; no ADI release targets 2025.2, but the LibreSDR HDL builds with it and meets timing.
 
 The v0.38 port was cross-checked against [hz12opensource/libresdr](https://github.com/hz12opensource/libresdr). Its CPU overclock (750 MHz on an XC7Z020-1), out-of-spec DDR timings, `-O3`/Spectre kernel hacks and iiod realtime tweaks were deliberately left out. The old branches `libre_v0.37` and `libre_v0.38` are kept unchanged for reference.
 
@@ -42,25 +43,27 @@ PetaLinux is **not** used. The build runs Vivado and Vitis (for the bitstream an
 
 | Variable | Required | Value |
 | --- | --- | --- |
-| `VIVADO_SETTINGS` | yes | `settings64.sh` of **Vitis 2022.2**, e.g. `/opt/Xilinx/Vitis/2022.2/settings64.sh`. Use the Vitis one, not Vivado's: it puts both `vivado` and `xsct` on the PATH. `xsct` builds the FSBL. Without this variable the Makefile assumes `/opt/Xilinx/Vivado/2022.2/settings64.sh`. |
+| `VIVADO_SETTINGS` | yes | `settings64.sh` of **Vivado/Vitis 2025.2**, e.g. `/tools/Xilinx/2025.2/Vitis/settings64.sh`. It must put `vivado`, `xsct` (builds the FSBL) and `bootgen` on the PATH; with 2025.2 both the Vitis and the Vivado script do. Without this variable the Makefile assumes `/opt/Xilinx/Vivado/2025.2/settings64.sh`. |
 | `BR2_DL_DIR` | no | A persistent directory for buildroot source downloads, e.g. `$HOME/buildroot-dl`. The first build needs internet access; later builds work offline from this cache. |
 
 Nothing else is needed. `TARGET` defaults to `libre`. `CROSS_COMPILE` is set by the Makefile, and the Linaro GCC 7.3 toolchain is installed by buildroot itself into `buildroot/output/host`.
 
 ```bash
-export VIVADO_SETTINGS=/opt/Xilinx/Vitis/2022.2/settings64.sh
+export VIVADO_SETTINGS=/tools/Xilinx/2025.2/Vitis/settings64.sh
 export BR2_DL_DIR=$HOME/buildroot-dl
 
 make          # firmware for flashing:   build/boot.frm, build/libre.frm, *.dfu, zip
 make sdimg    # SD card boot files:      build_sdimg/
 ```
 
-- A full build takes about 1–1.5 h on 8 cores. Most of the time is spent in Vivado and buildroot.
+- A first full build takes about 1 h on 8 cores (HDL about 15 min, the rest is buildroot). Rebuilds that reuse the HDL and buildroot output take a few minutes.
+- The Makefile checks the Vivado version (`VIVADO_VERSION ?= 2025.2`) and passes it to the ADI HDL scripts. To build with another version, set `VIVADO_VERSION`; it has only been tested with 2025.2.
+- XSCT 2025.2 prints "XSCT is deprecated and will be removed in future releases". It still builds the FSBL.
 - `make` starts with `clean-build`, which **deletes `build/` and `build_sdimg/`**. Copy any images you want to keep somewhere else first.
 - Update the submodules after every `git pull` or checkout: `git submodule update --init --recursive`.
 - When switching between revisions built with different Vivado versions (for example, `libre-v0.37` with 2021.2), run `git clean -fdX` in `hdl/` first. Otherwise stale IP builds are reused.
 
-To build `libre-v0.37`: `git checkout libre-v0.37 && git submodule update`. Then use Vitis 2021.2 for `VIVADO_SETTINGS`, and also set `CROSS_COMPILE=arm-linux-gnueabihf-` and add `<Vitis 2021.2>/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin` to `PATH`.
+The `libre-v0.38.x` tags need Vivado/Vitis **2022.2** (with `VIVADO_SETTINGS` pointing to its Vitis `settings64.sh`). To build `libre-v0.37`: `git checkout libre-v0.37 && git submodule update`. Then use Vitis 2021.2 for `VIVADO_SETTINGS`, and also set `CROSS_COMPILE=arm-linux-gnueabihf-` and add `<Vitis 2021.2>/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin` to `PATH`.
 
 Optional CPU/DDR overclock (out of spec, at your own risk): after `make`, run `make overclock OVERCLOCK_CPU_MULT=<n> OVERCLOCK_DDR_MULT=<n>`, then `make sdimg`. This only patches the PLL multipliers in the FSBL's `ps7_init.c`. The DDR timings stay at the preset.
 
@@ -100,7 +103,7 @@ This is done from a running board, booted either from SD or from the existing fl
 3. Copy `build/libre.frm` (kernel, device tree and rootfs) to the drive and eject it again. When it finishes, the drive contains `SUCCESS` (or `FAILED*`).
 4. Power off, remove the SD card and power on. The board now boots from QSPI flash.
 
-Do `boot.frm` first and `libre.frm` second. Writing `boot.frm` resets the u-boot environment, including `fit_size`, which `libre.frm` sets to the image size. The board still boots if the order is reversed, because u-boot falls back to reading the whole 30 MB partition, but booting is slower. For later updates, usually only `libre.frm` is needed. You can also copy the whole `libresdr-fw-*.zip` to the drive, and the board unpacks the `.frm` files from it itself.
+Do `boot.frm` first and `libre.frm` second, **in two separate ejects**. Writing `boot.frm` resets the u-boot environment, including `fit_size`, which `libre.frm` sets to the image size, and your own settings (network addresses, `eth_mode`, ...): note them in `config.txt` before and set them again afterwards. If both files are on the drive at once, the board writes `libre.frm` first and `boot.frm` second, so `fit_size` is lost. The board still boots, because u-boot falls back to reading the whole 30 MB partition, but booting is slower. The same applies to copying the whole `libresdr-fw-*.zip`, which contains both. For later updates, usually only `libre.frm` is needed.
 
 If the board does not boot from flash afterwards, insert the SD card. It always takes priority, so you can repeat the procedure.
 
@@ -140,7 +143,9 @@ Writing `boot.frm` resets the whole environment to defaults, including these key
 
 On this board, a powered Ethernet PHY disturbs the USB link: the host drops the board's USB device (`device descriptor read/64, error -71`) within 10–60 s, even with no cable. The cause is probably in the hardware and is not proven. This is why `eth_mode = auto` powers the PHY down when no cable is plugged in at boot. Use either USB or Ethernet for data. While Ethernet is in use, expect the USB drive and `config.txt` to disappear; set the network addresses before plugging in the cable.
 
-Measured: Ethernet (1000BASE-T, direct to a PC NIC) streams one channel at 10 Msps without loss, while USB manages about 6 Msps. An occasional USB drop shortly after boot has also been seen with the PHY powered down. If the board disappears from USB while its console still works, re-binding the USB controller restores it:
+Measured: Ethernet (1000BASE-T, direct to a PC NIC) streams one channel at 10 Msps without loss, while USB manages about 6 Msps.
+
+USB drops also happen with the PHY powered down, and they depend on the PC side. On the author's PC (Intel H81 chipset), the board dropped on every boot in the rear USB 2.0 ports but was stable in the rear USB 3.0 ports, and even there it dropped while the PC was under full load (a firmware build). Other USB devices on the same controller were not affected. Use the port that works best, avoid heavy load on the PC while streaming, and try a powered USB hub if drops persist. If the board disappears from USB while its console still works, re-binding the USB controller restores it:
 
 ```bash
 G=/sys/kernel/config/usb_gadget/composite_gadget; echo "" > $G/UDC; sleep 2; echo ci_hdrc.0 > $G/UDC
