@@ -1,5 +1,5 @@
 
-VIVADO_VERSION ?= 2022.2
+VIVADO_VERSION ?= 2025.2
 
 # Use Buildroot External Linaro GCC 7.3-2018.05 arm-linux-gnueabihf Toolchain
 CROSS_COMPILE = arm-linux-gnueabihf-
@@ -93,6 +93,7 @@ linux/arch/arm/boot/zImage: TOOLCHAIN
 	$(TOOLS_PATH) make -C linux -j $(NCORES) ARCH=arm CROSS_COMPILE=$(CROSS_COMPILE) zImage UIMAGE_LOADADDR=0x8000
 	$(TOOLS_PATH) make -C linux -j $(NCORES) ARCH=arm CROSS_COMPILE=$(CROSS_COMPILE) uImage UIMAGE_LOADADDR=0x8000
 
+
 .PHONY: linux/arch/arm/boot/zImage
 .PHONY: linux/arch/arm/boot/uImage
 
@@ -134,7 +135,7 @@ build/$(TARGET).itb: u-boot-xlnx/tools/mkimage build/zImage build/rootfs.cpio.gz
 
 build/system_top.xsa:  | build
 ifeq (1, ${HAVE_VIVADO})
-	bash -c "source $(VIVADO_SETTINGS) && make -C hdl/projects/$(TARGET) && cp hdl/projects/$(TARGET)/$(TARGET).sdk/system_top.xsa $@"
+	bash -c "source $(VIVADO_SETTINGS) && REQUIRED_VIVADO_VERSION=$(VIVADO_VERSION) make -C hdl/projects/$(TARGET) && cp hdl/projects/$(TARGET)/$(TARGET).sdk/system_top.xsa $@"
 	unzip -l $@ | grep -q ps7_init || cp hdl/projects/$(TARGET)/$(TARGET).srcs/sources_1/bd/system/ip/system_sys_ps7_0/ps7_init* build/
 else ifneq ($(XSA_FILE),)
 	cp $(XSA_FILE) $@
