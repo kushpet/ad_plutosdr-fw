@@ -26,22 +26,26 @@ Goal: tag `libre-v0.39` in all repositories, built with Vivado 2025.2, with ever
 
 ## Phase 0: set up the new system
 
+The user works with **the same repository on the old system's disk**, mounted in Ubuntu 22.04 (no new clone). The repository path is therefore different from `/home/user/GitHub/kushpet/ad_plutosdr-fw`. The same holds for `~/buildroot-dl` and `~/libresdr-images` on that disk. Paths in `CLAUDE.md` (Building) are those of the old system.
+
 1. Packages: the `apt-get install` lines in `README.md` → Host setup. Note any that are missing on 22.04.
-2. GitHub access over SSH: copy the old system's `~/.ssh/id_ed25519*`, or add a new key to the GitHub account. The remotes are `git@github.com:kushpet/<repo>.git`.
-3. Clone and prepare the repositories:
-   ```bash
-   git clone --recursive git@github.com:kushpet/ad_plutosdr-fw.git -b libresdr
-   cd ad_plutosdr-fw
-   git remote add upstream https://github.com/analogdevicesinc/plutosdr-fw.git
-   for r in hdl linux buildroot u-boot-xlnx; do
-     (cd $r && git checkout libresdr && git remote add upstream https://github.com/analogdevicesinc/$r.git)
-   done
-   ```
-   `git submodule update` leaves detached HEADs; the submodule `libresdr` branches must be checked out before committing. The upstream repo names are `hdl`, `linux`, `buildroot`, `u-boot-xlnx` and `plutosdr-fw`.
-4. Git identity, as used so far: name `Dmitry Kushpet`; superproject email `kushpet@users.noreply.github.com`, submodules `kushpet@gmail.com`.
-5. Vivado 2025.2: find the settings script that puts **both** `vivado` and `xsct` on the PATH. With 2025.x it may be `<install>/2025.2/Vivado/settings64.sh` or the Vitis one. Check with `vivado -version`, `which xsct bootgen`.
-6. Optional: copy the old system's buildroot download cache `~/buildroot-dl` (on the old disk) and set `BR2_DL_DIR` to it. This saves downloads; v0.39 buildroot fetches newer packages anyway.
-7. Save copies of the rollback images (above) on the new system.
+2. Git:
+   - If the user's UID differs from 1000 on the new system, git refuses the repositories ("dubious ownership"). Fix that with `git config --global --add safe.directory '*'`, or align the UID.
+   - Author identity is stored in each repo's local config (set 2026-10-11): name `Dmitry Kushpet`, superproject email `kushpet@users.noreply.github.com`, submodules `kushpet@gmail.com`. Check it with `git config user.email` in each repo.
+   - Pushing needs a GitHub SSH key on the new system. Copy `id_ed25519*` from the old disk's `home/user/.ssh/` to `~/.ssh/` (mode 600), or add a new key to GitHub. Test with `ssh -T git@github.com`.
+   - The `upstream` remotes already exist in all repositories. Submodules are on their `libresdr` branches; check with `git -C <repo> branch --show-current` before committing.
+3. **Clean the old build trees before the first build.** They hold absolute paths from the old system and 2022.2 Vivado state:
+   - `rm -rf buildroot/output` (3.8 GB; the toolchain is rebuilt);
+   - `git clean -fdX` in `hdl/` and `u-boot-xlnx/`;
+   - `make -C linux mrproper`.
+   After this, the old system can no longer build incrementally. It does not need to: the v0.38.3 images are archived.
+4. Vivado 2025.2: find the settings script that puts **both** `vivado` and `xsct` on the PATH. With 2025.x it may be `<install>/2025.2/Vivado/settings64.sh` or the Vitis one. Check with `vivado -version`, `which xsct bootgen`.
+5. `BR2_DL_DIR`: point it at the old disk's `home/user/buildroot-dl` (download cache, saves time).
+6. Rollback images: `home/user/libresdr-images/libre-v0.38.3/` on the old disk.
+7. Board access from the new system:
+   - the console is FTDI interface 02 (`/dev/ttyUSBn`, 115200), and the user must be in the `dialout` group;
+   - USB RNDIS: the board is at 192.168.2.1; NetworkManager creates the PC side by itself;
+   - `dfu-util` needs a udev rule for `0456:b673` and `0456:b674` (the old system had `53-adi-plutosdr-usb.rules`), or root.
 
 ## Phase 1: does our current HDL build with 2025.2? (no merge yet)
 
