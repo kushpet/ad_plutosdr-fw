@@ -16,7 +16,8 @@ The main branch is `libresdr`. The same branch name is used in all four submodul
 | tag `libre-v0.38.2` | `libre-v0.38.1` + `eth_mode` | Vivado **2022.2** | The Ethernet PHY is powered down when unused, because a running PHY disturbs USB (see below). |
 | tag `libre-v0.38.3` | `libre-v0.38.2` + fixes | Vivado **2022.2** | **QSPI flash writes fixed** (Winbond W25Q256 above 16 MiB, see below). DFU button works (SW1 on MIO12). Both CPU cores on flash boot (`maxcpus`). |
 | tag `libre-v0.39` | ADI v0.39 + everything from `libre-v0.38.3` | Vivado **2025.2** | Linux 6.1, libiio 0.26. Tested on hardware (RAM boot and flash). UART1 removed from the device tree; `info.html` compares the firmware's ADI base version with ADI's latest release. |
-| `libresdr` (tip) | `libre-v0.39` + docs | Vivado **2025.2** | |
+| tag `libre-v0.39.1` | `libre-v0.39` + cleanup | Vivado **2025.2** | `eth_mode` removed again: USB drops came from powering the board from the PC, not from Ethernet (see below). The 40 MHz VCTCXO tuning DAC is set to mid-scale at boot (it was stuck at 0 V, about −21 ppm). HDL timed for the fitted −1 speed grade. day0wl leftovers removed (default gateway, unused kernel options, overclock script, u-boot boot delay). PL I2C with the onboard EEPROM enabled, as on Pluto. |
+| `libresdr` (tip) | `libre-v0.39.1` + docs | Vivado **2025.2** | |
 
 In each repository, the `libre-v0.38` and `libre-v0.39` commits are merges: the first parent is the previous LibreSDR state and the second is the ADI release commit. The ADI history therefore stays reachable through the branch. ADI v0.39 targets Vivado 2023.2; no ADI release targets 2025.2, but the LibreSDR HDL builds with it and meets timing.
 
@@ -87,7 +88,7 @@ Insert the card, connect the board and power it on. Signs that it booted:
 - `pl_led1` blinks a heartbeat.
 - On the debug USB port (onboard FT2232HQ), the serial console `/dev/ttyUSB2` (115200 8N1) shows the u-boot and kernel log. u-boot prints `Copying Linux from SD to RAM...`.
 - On the OTG USB port, the board appears like a PlutoSDR: an RNDIS network interface with the board at `192.168.2.1` (your PC gets `192.168.2.10` over DHCP), plus a USB drive named **PlutoSDR**.
-- Gigabit Ethernet comes up with the static address `192.168.1.10`, but only if a cable with link is plugged in at boot (`eth_mode = auto`, see below).
+- Gigabit Ethernet comes up with the static address `192.168.1.10` (`ipaddr_eth`); the cable may also be plugged in later.
 - Log in with `ssh root@192.168.2.1` (password `analog`), or test the radio with `iio_info -u ip:192.168.2.1`.
 
 ## Writing the firmware to the internal QSPI flash
@@ -101,7 +102,7 @@ This is done from a running board, booted either from SD or from the existing fl
 3. Copy `build/libre.frm` (kernel, device tree and rootfs) to the drive and eject it again. When it finishes, the drive contains `SUCCESS` (or `FAILED*`).
 4. Power off, remove the SD card and power on. The board now boots from QSPI flash.
 
-Do `boot.frm` first and `libre.frm` second, **in two separate ejects**. Writing `boot.frm` resets the u-boot environment, including `fit_size`, which `libre.frm` sets to the image size, and your own settings (network addresses, `eth_mode`, ...): note them in `config.txt` before and set them again afterwards. If both files are on the drive at once, the board writes `libre.frm` first and `boot.frm` second, so `fit_size` is lost. The board still boots, because u-boot falls back to reading the whole 30 MB partition, but booting is slower. The same applies to copying the whole `libresdr-fw-*.zip`, which contains both. For later updates, usually only `libre.frm` is needed.
+Do `boot.frm` first and `libre.frm` second, **in two separate ejects**. Writing `boot.frm` resets the u-boot environment, including `fit_size`, which `libre.frm` sets to the image size, and your own settings (network addresses, ...): note them in `config.txt` before and set them again afterwards. If both files are on the drive at once, the board writes `libre.frm` first and `boot.frm` second, so `fit_size` is lost. The board still boots, because u-boot falls back to reading the whole 30 MB partition, but booting is slower. The same applies to copying the whole `libresdr-fw-*.zip`, which contains both. For later updates, usually only `libre.frm` is needed.
 
 If the board does not boot from flash afterwards, insert the SD card. It always takes priority, so you can repeat the procedure.
 
@@ -132,22 +133,27 @@ Settings live in the u-boot environment and are edited through `config.txt` on t
 
 | Section | Key | Values | Meaning |
 | --- | --- | --- | --- |
-| `[USB_ETHERNET]` | `eth_mode` | `auto` (default), `on`, `off` | Onboard Ethernet. `auto`: at boot, keep the PHY powered only if a cable has link within 5 s; otherwise power it down. |
 | `[SYSTEM]` | `maxcpus` | `1`, `2` (default) | CPU cores used when booting from flash. A reboot is needed after changing it. |
 
 Writing `boot.frm` resets the whole environment to defaults, including these keys and the network addresses.
 
-### USB and Ethernet together are not reliable
+`ipaddr_eth`/`netmask_eth` in `[USB_ETHERNET]` (stock keys) set the onboard Ethernet address; `xo_correction` in `[SYSTEM]` (stock key) tells the AD9363 driver the true reference frequency (see below).
 
-On this board, a powered Ethernet PHY disturbs the USB link: the host drops the board's USB device (`device descriptor read/64, error -71`) within 10–60 s, even with no cable. The cause is probably in the hardware and is not proven. This is why `eth_mode = auto` powers the PHY down when no cable is plugged in at boot. Use either USB or Ethernet for data. While Ethernet is in use, expect the USB drive and `config.txt` to disappear; set the network addresses before plugging in the cable.
+### Power the board from a 5 V supply when Ethernet is used
+
+Both USB-C ports (Debug and OTG) feed the board's 5 V rail through diodes; there is no other power input. Powered only from a PC's USB ports, the board's USB link is not reliable while the Ethernet PHY is powered: the host drops the board's USB device (`device descriptor read/64, error -71`) after seconds to minutes. With a 5 V charger (a 1 A one was used) in the **Debug** port and the OTG cable still in the PC, USB and Gigabit Ethernet ran together for over an hour without a drop, also under load. Firmware up to `libre-v0.39` powered the PHY down when no cable was plugged in at boot (`eth_mode`); since `libre-v0.39.1` Ethernet always comes up, as on Pluto. Running from the PC alone, `ip link set eth0 down` on the board avoids the drops until the next reboot.
 
 Measured: Ethernet (1000BASE-T, direct to a PC NIC) streams one channel at 10 Msps without loss, while USB manages about 6 Msps.
 
-USB drops also happen with the PHY powered down, and they depend on the PC side. On the author's PC (Intel H81 chipset), the board dropped on every boot in the rear USB 2.0 ports but was stable in the rear USB 3.0 ports, and even there it dropped while the PC was under full load (a firmware build). Other USB devices on the same controller were not affected. Use the port that works best, avoid heavy load on the PC while streaming, and try a powered USB hub if drops persist. If the board disappears from USB while its console still works, re-binding the USB controller restores it:
+If the board disappears from USB while it still answers over Ethernet or the console, re-binding the USB controller restores it:
 
 ```bash
 G=/sys/kernel/config/usb_gadget/composite_gadget; echo "" > $G/UDC; sleep 2; echo ci_hdrc.0 > $G/UDC
 ```
+
+### Reference oscillator (40 MHz VCTCXO)
+
+The AD9363 reference comes from a 40 MHz VCTCXO whose control voltage is set by a DAC5311. Up to `libre-v0.39` nothing programmed the DAC, so it stayed at 0 V. The board now sets it to mid-scale (128 of 255) at boot (`S22vctcxo`); it is the IIO device `dac5311` (`out_voltage_raw`). On the author's board, measured against a GSM base station (FCCH bursts; base stations hold ±0.05 ppm), the reference error was −20.7 ppm at 0, −2.2 ppm at 128 and +13.3 ppm at 255 (about 0.13 ppm per step). To remove the remaining error, set `xo_correction` to the true reference frequency, here `40000000 × (1 − 2.2e-6) = 39999912`. The error changes with temperature.
 
 ## Troubleshooting
 
