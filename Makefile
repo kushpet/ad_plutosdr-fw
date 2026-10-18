@@ -191,11 +191,6 @@ clean:
 	rm -f $(notdir $(wildcard build/*))
 	rm -rf build/*
 	rm -rf build_sdimg
-	
-overclock: build/sdk/fsbl/Release/fsbl.elf
-	test -n "$(OVERCLOCK_CPU_MULT)"  # Check environment veriable OVERCLOCK_CPU_MULT for overclock.
-	test -n "$(OVERCLOCK_DDR_MULT)"  # Check environment veriable OVERCLOCK_DDR_MULT for overclock.
-	bash -c "source $(VIVADO_SETTINGS) && ./overclock.sh $(OVERCLOCK_CPU_MULT) $(OVERCLOCK_DDR_MULT)"
 
 SDIMGDIR = $(CURDIR)/build_sdimg
 sdimg: build/

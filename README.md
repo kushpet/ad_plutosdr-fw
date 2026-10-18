@@ -65,8 +65,6 @@ make sdimg    # SD card boot files:      build_sdimg/
 
 The `libre-v0.38.x` tags need Vivado/Vitis **2022.2** (with `VIVADO_SETTINGS` pointing to its Vitis `settings64.sh`). To build `libre-v0.37`: `git checkout libre-v0.37 && git submodule update`. Then use Vitis 2021.2 for `VIVADO_SETTINGS`, and also set `CROSS_COMPILE=arm-linux-gnueabihf-` and add `<Vitis 2021.2>/gnu/aarch32/lin/gcc-arm-linux-gnueabi/bin` to `PATH`.
 
-Optional CPU/DDR overclock (out of spec, at your own risk): after `make`, run `make overclock OVERCLOCK_CPU_MULT=<n> OVERCLOCK_DDR_MULT=<n>`, then `make sdimg`. This only patches the PLL multipliers in the FSBL's `ps7_init.c`. The DDR timings stay at the preset.
-
 ## Booting from an SD card (flash is not touched)
 
 The board picks the boot source in hardware. The SD card-detect signal drives Zynq `BOOT_MODE[2]` (MIO4, see `docs/zynqsdr_rev5.pdf`). With a card inserted, the BootROM boots from SD; without one, it boots from QSPI flash. Booting from SD therefore works whatever is in the flash, and it is also the recovery path if a flash update goes wrong.
